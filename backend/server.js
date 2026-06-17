@@ -40,11 +40,14 @@ app.post('/api/contact', async (req, res) => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       // Production Gmail / Custom SMTP
       transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
         auth: {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASS,
         },
+        family: 4
       });
     } else {
       // Ethereal SMTP fallback for local testing
