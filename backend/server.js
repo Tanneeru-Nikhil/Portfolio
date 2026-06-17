@@ -16,7 +16,9 @@ app.get('/', (req, res) => {
   res.json({
     status: 'online',
     message: 'Nikhil Tanneeru Portfolio Backend is Live!',
-    envConfigured: !!(process.env.RESEND_API_KEY || (process.env.EMAIL_USER && process.env.EMAIL_PASS))
+    envConfigured: !!(process.env.RESEND_API_KEY || (process.env.EMAIL_USER && process.env.EMAIL_PASS)),
+    hasResendKey: !!process.env.RESEND_API_KEY,
+    hasSmtpCredentials: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS)
   });
 });
 
