@@ -11,6 +11,14 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    message: 'Nikhil Tanneeru Portfolio Backend is Live!',
+    envConfigured: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS)
+  });
+});
+
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
 
