@@ -174,7 +174,10 @@ app.post('/api/contact', async (req, res) => {
 
   } catch (error) {
     console.error('Error sending email:', error);
-    res.status(500).json({ error: 'Failed to process message and send email.' });
+    res.status(500).json({ 
+      error: 'Failed to process message and send email.',
+      details: error.message || error
+    });
   }
 });
 
