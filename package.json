@@ -2,5 +2,16 @@
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.2"
-  }
+  },
+  "name": "portfolio",
+  "version": "1.0.0",
+  "description": "A premium, responsive, and \"anti-gravity\" personal portfolio website for **Nikhil Tanneeru**, a Java, MERN Full-Stack & Gen-AI Powered Developer. Built using React.js, Node.js, Express, Tailwind CSS, and Nodemailer SMTP integrations.",
+  "main": "index.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
