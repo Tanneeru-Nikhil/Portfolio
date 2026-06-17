@@ -25,7 +25,11 @@ const ContactFooter = () => {
     setStatus({ type: '', message: '' });
 
     try {
-      const response = await fetch('http://localhost:5000/api/contact', {
+      const BACKEND_URL = import.meta.env.PROD 
+        ? 'https://portfolio-y6r8.onrender.com' 
+        : 'http://localhost:5000';
+
+      const response = await fetch(`${BACKEND_URL}/api/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
