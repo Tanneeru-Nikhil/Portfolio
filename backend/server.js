@@ -11,6 +11,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// The portfolio owner's email where notifications will be sent
+const CONTACT_RECEIVER_EMAIL = process.env.CONTACT_RECEIVER_EMAIL || process.env.EMAIL_USER || 'nikhiltanneeeru15@gmail.com';
+
 // Routes
 app.get('/', (req, res) => {
   res.json({
@@ -137,7 +140,7 @@ app.post('/api/contact', async (req, res) => {
       const resend = new Resend(process.env.RESEND_API_KEY);
       const { data, error } = await resend.emails.send({
         from: 'Nikhil Tanneeru Portfolio <onboarding@resend.dev>',
-        to: `${email}`,
+        to: CONTACT_RECEIVER_EMAIL,
         subject: `New Portfolio Message from ${name}`,
         replyTo: email,
         html: htmlContent
@@ -184,7 +187,8 @@ app.post('/api/contact', async (req, res) => {
 
     const mailOptions = {
       from: `"Nikhil Tanneeru Portfolio" <${process.env.EMAIL_USER || 'no-reply@nikhiltanneeru.dev'}>`,
-      to: `${email}`,
+      to: CONTACT_RECEIVER_EMAIL,
+      replyTo: email,
       subject: `New Portfolio Message from ${name}`,
       html: htmlContent,
     };
