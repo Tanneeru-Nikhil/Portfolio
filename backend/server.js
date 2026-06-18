@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const { Resend } = require('resend');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const app = express();
@@ -13,6 +15,151 @@ app.use(express.json());
 
 // The portfolio owner's email where notifications will be sent
 const CONTACT_RECEIVER_EMAIL = process.env.CONTACT_RECEIVER_EMAIL || process.env.EMAIL_USER || 'nikhiltanneeeru15@gmail.com';
+
+// In-memory mock database of users for local testing
+const mockUsers = [
+  {
+    email: process.env.EMAIL_USER || 'cse22d45a0526@gmail.com',
+    password: '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890' // mock hashed password
+  }
+];
+
+// Mock database pool matching query pattern
+const pool = {
+  query: async (sql, params) => {
+    // SELECT * FROM user WHERE email='...'
+    if (sql.includes('SELECT') && sql.includes('user')) {
+      let email = params ? params[0] : null;
+      if (!email) {
+        const match = sql.match(/email\s*=\s*'([^']+)'/);
+        if (match) email = match[1];
+      }
+      const matched = mockUsers.filter(u => u.email === email);
+      return [matched];
+    }
+    
+    // UPDATE user SET password='...' WHERE email='...'
+    if (sql.includes('UPDATE') && sql.includes('user')) {
+      let passwordHash = params ? params[0] : null;
+      let email = params ? params[1] : null;
+      if (!passwordHash) {
+        const pwdMatch = sql.match(/password\s*=\s*'([^']+)'/);
+        if (pwdMatch) passwordHash = pwdMatch[1];
+      }
+      if (!email) {
+        const emailMatch = sql.match(/email\s*=\s*'([^']+)'/);
+        if (emailMatch) email = emailMatch[1];
+      }
+      const index = mockUsers.findIndex(u => u.email === email);
+      if (index !== -1) {
+        mockUsers[index].password = passwordHash;
+      }
+      return [{ affectedRows: 1 }];
+    }
+    return [[]];
+  }
+};
+
+// OTP Generation Helper
+const generateOtp = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// In-memory active OTP store
+const currentOTP = {};
+
+// Access Token Secret for JWT
+const accessTokenSecret = process.env.JWT_SECRET || 'R4fahCwOo87LCcl8B9zR46SVXwjDFphh';
+
+// JWT Token Generation Helper
+const generateJWTToken = (user) => {
+  return jwt.sign(user, accessTokenSecret, {
+    expiresIn: '15m'
+  });
+};
+
+// JWT Authentication Middleware
+const JWTAuthentication = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(404).json({ msg: 'Invalid Token or Token missing' });
+  }
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, accessTokenSecret, (err, user) => {
+    if (err) {
+      return res.status(404).json({ msg: 'Invalid Token or Token missing' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// Helper: Send OTP Email
+const sendOtpEmail = async (email, otp) => {
+  const htmlContent = `<h1> Hello Guru This is Your otp : ${otp}, pleace don't share to anyone</h1>`;
+  
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const { data, error } = await resend.emails.send({
+      from: 'Nikhil Tanneeru Portfolio <onboarding@resend.dev>',
+      to: email,
+      subject: "OTP FROM MY NODE SERVER",
+      html: htmlContent
+    });
+    if (error) {
+      throw new Error(error.message || JSON.stringify(error));
+    }
+    console.log('OTP sent successfully through Resend API:', data.id);
+    return 'OTP SEND SUCCESSFULY';
+  }
+
+  let transporter;
+  let isTest = false;
+
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      }
+    });
+  } else {
+    isTest = true;
+    const testAccount = await nodemailer.createTestAccount();
+    transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass,
+      },
+    });
+  }
+
+  const mailOptions = {
+    from: `"Nikhil Tanneeru Portfolio" <${process.env.EMAIL_USER || 'no-reply@nikhiltanneeru.dev'}>`,
+    to: email,
+    subject: "OTP FROM MY NODE SERVER",
+    html: htmlContent,
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  if (isTest) {
+    console.log('OTP sent to Ethereal. Preview URL: ' + nodemailer.getTestMessageUrl(info));
+  } else {
+    console.log('OTP sent successfully through Gmail/SMTP:', info.messageId);
+  }
+  return 'OTP SEND SUCCESSFULY';
+};
+
+// Export helpers for external reference/testing
+exports.generateOtp = generateOtp;
+exports.currentOTP = currentOTP;
+exports.generateJWTToken = generateJWTToken;
+exports.JWTAuthentication = JWTAuthentication;
+exports.sendOtpEmail = sendOtpEmail;
 
 // Routes
 app.get('/', (req, res) => {
@@ -210,6 +357,62 @@ app.post('/api/contact', (req, res) => {
       console.error('Error sending email in background:', error);
     }
   })();
+});
+
+// Forgot Password Route (OTP request)
+app.post('/forgotpassword', async (req, res) => {
+  const { email } = req.body;
+  try {
+    const findmail = await pool.query(`SELECT * FROM user WHERE email='${email}'`);
+    if (findmail[0].length === 0) {
+      res.status(404).json({ msg: 'user not exist pleace register' });
+    } else {
+      const generatedOTP = generateOtp();
+      currentOTP[email] = generatedOTP;
+      console.log('Active OTP store:', currentOTP);
+
+      // Return success instantly
+      res.status(200).json({ msg: 'OTP SEND' });
+
+      // Send email in background
+      sendOtpEmail(email, generatedOTP)
+        .then((data) => console.log('OTP send status:', data))
+        .catch((err) => console.error('Failed to send OTP:', err));
+    }
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ msg: 'SERVER ERROR' });
+  }
+});
+
+// Verify OTP Route
+app.post('/verify-otp', (req, res) => {
+  const { email, OTP } = req.body;
+  console.log(`email:${email}`);
+  console.log(`OTP:${OTP}`);
+  
+  if (Object.keys(currentOTP).includes(email)) {
+    if (currentOTP[email] === OTP.toString()) {
+      res.status(200).json({ msg: 'OTP VERIFIED SUCCESSFULLY' });
+    } else {
+      res.status(404).json({ msg: 'OTP Invaild' });
+    }
+  } else {
+    res.status(404).json({ msg: 'OTP Invaild' });
+  }
+});
+
+// Update Password Route
+app.post('/update-password', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const passwordHash = await bcrypt.hash(password, 2);
+    await pool.query(`UPDATE user SET password='${passwordHash}' WHERE email='${email}'`);
+    res.status(200).json({ msg: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Update password error:', err);
+    res.status(500).json({ msg: 'SERVER ERROR' });
+  }
 });
 
 // Start the server
