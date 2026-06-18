@@ -25,7 +25,7 @@ app.get('/', (req, res) => {
   });
 });
 
-app.post('/api/contact', async (req, res) => {
+app.post('/api/contact', (req, res) => {
   const { name, email, message } = req.body;
 
   if (!name || !email || !message) {
@@ -39,6 +39,10 @@ app.post('/api/contact', async (req, res) => {
   console.log(`Message: ${message}`);
   console.log('-----------------------------------');
 
+  // Return a successful response immediately to ensure the client gets an instant response
+  res.status(200).json({ success: true, message: 'Message received successfully!' });
+
+  // Process the email dispatch asynchronously in the background
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -134,83 +138,78 @@ app.post('/api/contact', async (req, res) => {
     </html>
   `;
 
-  try {
-    // 1. Try Resend HTTP API first (Highly recommended for Render Free Tier to bypass SMTP blocking)
-    if (process.env.RESEND_API_KEY) {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const { data, error } = await resend.emails.send({
-        from: 'Nikhil Tanneeru Portfolio <onboarding@resend.dev>',
-        to: CONTACT_RECEIVER_EMAIL,
-        subject: `New Portfolio Message from ${name}`,
-        replyTo: email,
-        html: htmlContent
-      });
+  (async () => {
+    try {
+      // 1. Try Resend HTTP API first (Highly recommended for Render Free Tier to bypass SMTP blocking)
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const { data, error } = await resend.emails.send({
+          from: 'Nikhil Tanneeru Portfolio <onboarding@resend.dev>',
+          to: CONTACT_RECEIVER_EMAIL,
+          subject: `New Portfolio Message from ${name}`,
+          replyTo: email,
+          html: htmlContent
+        });
 
-      if (error) {
-        throw new Error(error.message || JSON.stringify(error));
+        if (error) {
+          throw new Error(error.message || JSON.stringify(error));
+        }
+
+        console.log('Message sent successfully through Resend API:', data.id);
+        return;
       }
 
-      console.log('Message sent successfully through Resend API:', data.id);
-      return res.status(200).json({ success: true, message: 'Message received and email sent successfully!' });
+      // 2. Fallback to standard Nodemailer SMTP
+      let transporter;
+      let isTest = false;
+
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        // Gmail / Custom SMTP
+        transporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 587,
+          secure: false,
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
+          family: 4
+        });
+      } else {
+        // Ethereal SMTP fallback for local testing
+        isTest = true;
+        const testAccount = await nodemailer.createTestAccount();
+        transporter = nodemailer.createTransport({
+          host: 'smtp.ethereal.email',
+          port: 587,
+          secure: false,
+          auth: {
+            user: testAccount.user,
+            pass: testAccount.pass,
+          },
+        });
+      }
+
+      const mailOptions = {
+        from: `"Nikhil Tanneeru Portfolio" <${process.env.EMAIL_USER || 'no-reply@nikhiltanneeru.dev'}>`,
+        to: CONTACT_RECEIVER_EMAIL,
+        replyTo: email,
+        subject: `New Portfolio Message from ${name}`,
+        html: htmlContent,
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+
+      if (isTest) {
+        console.log('Message sent to test Ethereal account.');
+        console.log('Preview URL: ' + nodemailer.getTestMessageUrl(info));
+      } else {
+        console.log('Message sent successfully through Gmail/SMTP:', info.messageId);
+      }
+    } catch (error) {
+      console.error('Error sending email in background:', error);
     }
-
-    // 2. Fallback to standard Nodemailer SMTP
-    let transporter;
-    let isTest = false;
-
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      // Gmail / Custom SMTP
-      transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
-        family: 4
-      });
-    } else {
-      // Ethereal SMTP fallback for local testing
-      isTest = true;
-      const testAccount = await nodemailer.createTestAccount();
-      transporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    }
-
-    const mailOptions = {
-      from: `"Nikhil Tanneeru Portfolio" <${process.env.EMAIL_USER || 'no-reply@nikhiltanneeru.dev'}>`,
-      to: CONTACT_RECEIVER_EMAIL,
-      replyTo: email,
-      subject: `New Portfolio Message from ${name}`,
-      html: htmlContent,
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-
-    if (isTest) {
-      console.log('Message sent to test Ethereal account.');
-      console.log('Preview URL: ' + nodemailer.getTestMessageUrl(info));
-    } else {
-      console.log('Message sent successfully through Gmail/SMTP:', info.messageId);
-    }
-
-    res.status(200).json({ success: true, message: 'Message received and email sent successfully!' });
-
-  } catch (error) {
-    console.error('Error sending email:', error);
-    res.status(500).json({ 
-      error: 'Failed to process message and send email.',
-      details: error.message || error
-    });
-  }
+  })();
 });
 
 // Start the server
